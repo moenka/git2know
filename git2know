@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+
+import os
+import re
+import ui
+from subprocess import check_call, \
+                       check_output
+
+HOME = os.environ['HOME']
+INDEXDB = HOME + '/.cache/mlocate.db'
+SYMBOL_UNCOMMITED = ui.UnicodeSequence(ui.darkred, "⇡", "#")
+SYMBOL_UNPUSHED = ui.UnicodeSequence(ui.darkyellow, "⤊", "+")
+SYMBOL_UNPULLED = ui.UnicodeSequence(ui.darkblue, "⤋", "-")
+
+
+class Repository:
+
+    path = ''
+    status = ''
+
+    def __init__(self, path):
+        self.path = os.path.split(path)[0]
+        self.update()
+        
+    def update(self):
+        status = check_output(['git', 'status', '--porcelain'], cwd=self.path) \
+                 .decode() \
+                .strip() \
+                .split('\n')
+        if status == ['']:
+            self.status = 'ok'
+            return
+        for state in status:
+            if re.match(r'(^[A ]+M|^\?\?)', state):
+                self.status = 'uncommited'
+                return
+        self.status = 'unpushed'
+
+
+def main():
+    ui.info_count(0, 2, 'Creating index database')
+    check_call(['updatedb', '-l0', '-U', HOME, '-o', INDEXDB])
+    ui.info_count(1, 2, 'Searching for git repositores')
+    repo_paths = check_output(['mlocate', '-q', '-d', INDEXDB, '-b', '*.git']) \
+                 .decode() \
+                 .strip() \
+                 .split('\n')
+    ui.info_1('Checking status')
+    for i, path in enumerate(repo_paths):
+        repo = Repository(path)
+        if repo.status == 'uncommited':
+            ui.info_count(i, len(repo_paths), SYMBOL_UNCOMMITED, path)
+        elif repo.status == 'unpushed':
+            ui.info_count(i, len(repo_paths), SYMBOL_UNPUSHED, path)
+        else:
+            ui.info_count(i, len(repo_paths), ui.check, path)
+    ui.info_2('Key:')
+    ui.info_2(ui.check, ' up-to-date')
+    ui.info_2(SYMBOL_UNPUSHED, ' unpushed changes')
+    ui.info_2(SYMBOL_UNCOMMITED, ' uncommited changes')
+    ui.info_2(SYMBOL_UNPULLED, ' changes on remote (not yet implemented)')
+
+if __name__ == '__main__':
+    main()
